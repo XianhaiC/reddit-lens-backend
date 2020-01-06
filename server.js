@@ -1,6 +1,7 @@
 const express = require('express')
 const bodyParser = require('body-parser')
 const mongoose = require('mongoose')
+import Pusher from 'pusher-js'
 const app = express()
 
 const filtersRoute = require('./routes/filter')
@@ -13,26 +14,27 @@ var db
 // middleware
 app.use(bodyParser.json())
 app.set('view engine', 'ejs')
-//TODO decide to use or not
-//app.use('/filters', filtersRoute)
 
-// doesnt use mongoose
+// pusher setup
 /*
-app.get('/', (req, res) => {
-  db.collection('quotes').find().toArray((err, results) => {
-    if (err) return console.log(err)
-    res.render('index.ejs', { quotes: results })
-  })
-})
+var pusher = new Pusher({
+    appId: '927461',
+    key: 'fde444a61c5f34c78026',
+    secret: 'cfe03ce621ae7db5ed29',
+    cluster: 'us3',
+    encrypted: true
+});
 
-app.post('/quotes', (req, res) => {
-  db.collection('quotes').save(req.body, (err, result) => {
-    if (err) return console.log(err)
-    console.log('saved to database')
-    res.redirect('/')
-  })
-})
+pusher.trigger('my-channel', 'my-event', {
+    "message": "hello world"
+});
 */
+var pusher = new Pusher("50ed18dd967b455393ed")
+var askredditChannel = pusher.subscribe("askreddit")
+askredditChannel.bind("new-listing", function(listing) {
+  console.log("NEW LISTING")
+  console.log(listing)
+})
 
 app.post('/contacts', (req, res) => {
   console.log(req.body)
@@ -56,14 +58,14 @@ app.get('/contacts', async (req, res) => {
 })
 
 app.get('/tokens', async (req, res) => {
-  const tokens = await Tokens.find()
+  const tokens = await Token.find()
   res.json(tokens)
 })
 
 app.post('/create-filter', async (req, res) => {
   console.log(req.body)
   // search for existing contact
-  var query = await Contact.find({ content: req.body.content, contentType: req.body.contentType })
+  var query = await Contact.find({ content: req.body.contact.content, contentType: req.body.contact.contentType })
   var existingTokens = [];
   var contact = null;
   console.log(query)
@@ -88,22 +90,35 @@ app.post('/create-filter', async (req, res) => {
     contact = query[0];
     // find existing tokens under this contact
     existingTokens = await Token.find({ contact: contact._id })
+    console.log("EXISTING TOKENS " + existingTokens.length)
   }
 
   // if the contact exists, then search through existing tokens to see if one already exists
   req.body.tokens.forEach(async token => {
     var found = false;
     for (var i = 0; i < existingTokens.length; i++) {
-      if (token.content == existingTokens[i].content
-        && token.subreddit == req.body.subreddit
-        && token.isRegex == existingToken[i].isRegex) {
+      var existingToken = existingTokens[i]
+      if (token.content == existingToken.content
+        && req.body.subreddit == existingToken.subreddit
+        && token.isRegex == existingToken.isRegex) {
         // update existing token
+        existingToken.matchTitle = token.matchTitle
+        existingToken.matchBody = token.matchBody
+        existingToken.matchFlair = token.matchFlair
+        existingToken.includeComments = token.includeComments
+        try {
+          await existingToken.save()
+        } catch (err) {
+          res.json({ message: err.message })
+          console.log(err.message)
+        }
         found = true;
         break;
       }
     }
 
     if (!found) {
+      console.log("Created new token")
       const newToken = new Token({...token,
         subreddit: req.body.subreddit,
         contact: contact._id

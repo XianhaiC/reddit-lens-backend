@@ -1,7 +1,12 @@
 const mongoose = require('mongoose')
+const Contact = require('./Contact')
 
 const TokenSchema = mongoose.Schema({
   content: {
+    type: String,
+    required: true
+  },
+  subreddit: {
     type: String,
     required: true
   },
@@ -25,10 +30,15 @@ const TokenSchema = mongoose.Schema({
     type: Boolean,
     required: true
   },
+  contact: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Contact',
+    required: true
+  },
   date: {
     type: Date,
     default: Date.now
   }
 })
 
-module.exports = mongoose.model('Tokens', TokenSchema)
+module.exports = mongoose.model('Token', TokenSchema)

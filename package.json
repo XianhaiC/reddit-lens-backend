@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon server.js"
+    "dev": "nodemon --exec babel-node server.js"
   },
   "author": "",
   "license": "ISC",
@@ -15,9 +15,15 @@
     "ejs": "^3.0.1",
     "express": "^4.17.1",
     "mongodb": "^3.4.0",
-    "mongoose": "^5.8.4"
+    "mongoose": "^5.8.4",
+    "pusher-js": "^5.0.3"
   },
   "devDependencies": {
+    "@babel/cli": "^7.7.7",
+    "@babel/core": "^7.7.7",
+    "@babel/node": "^7.7.7",
+    "@babel/preset-env": "^7.7.7",
+    "babel-cli": "^6.26.0",
     "nodemon": "^2.0.2"
   }
 }
