@@ -31,4 +31,4 @@ const TokenSchema = mongoose.Schema({
   }
 })
 
-module.exports = mongoose.model('Contacts')
+module.exports = mongoose.model('Tokens', TokenSchema)
