@@ -1,9 +1,11 @@
+import Pusher from 'pusher-js'
+
 const express = require('express')
 const bodyParser = require('body-parser')
 const mongoose = require('mongoose')
-import Pusher from 'pusher-js'
 const app = express()
 
+const feed = require('./feed')
 const filtersRoute = require('./routes/filter')
 const Contact = require('./models/Contact')
 const Token = require('./models/Token')
@@ -16,25 +18,27 @@ app.use(bodyParser.json())
 app.set('view engine', 'ejs')
 
 // pusher setup
-/*
-var pusher = new Pusher({
-    appId: '927461',
-    key: 'fde444a61c5f34c78026',
-    secret: 'cfe03ce621ae7db5ed29',
-    cluster: 'us3',
-    encrypted: true
-});
-
-pusher.trigger('my-channel', 'my-event', {
-    "message": "hello world"
-});
-*/
 var pusher = new Pusher("50ed18dd967b455393ed")
 var askredditChannel = pusher.subscribe("askreddit")
 askredditChannel.bind("new-listing", function(listing) {
   console.log("NEW LISTING")
   console.log(listing)
 })
+
+// create an init function that binds the server to subreddits for existing tokens
+// in the database. In case the server must restart, this is necessary
+
+// modify the create filter function to also bind to a new subreddit should the 
+// new tokens pertains to one
+
+// create a callback that handles new post submissions. perform the following
+// query for all tokens that subscribe to that subreddit
+// for each token:
+//      check if it matches the content, considering whichever flags it has set
+//      (match title, body, etc)
+//      If a match is made, then fetch the coresponding contact
+//      If the contact is email, send email via whatever // TODO
+//      If the contact is reddit username, figure out how to send reddit pm // TODO
 
 app.post('/contacts', (req, res) => {
   console.log(req.body)
@@ -143,6 +147,7 @@ mongoose.connect('mongodb+srv://'
   () => {
     app.listen(3000, () => {
       console.log('listening on 3000')
+      feed.init()
     })
   }
 )
