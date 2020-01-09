@@ -1,11 +1,14 @@
 import Pusher from 'pusher-js'
+import { InboxStream, CommentStream, SubmissionStream } from "snoostorm";
 
 const express = require('express')
 const bodyParser = require('body-parser')
 const mongoose = require('mongoose')
+const snoowrap = require('snoowrap')
+const nodemailer = require('nodemailer')
 const app = express()
 
-const feed = require('./feed')
+const helpers = require('./helpers')
 const filtersRoute = require('./routes/filter')
 const Contact = require('./models/Contact')
 const Token = require('./models/Token')
@@ -18,11 +21,30 @@ app.use(bodyParser.json())
 app.set('view engine', 'ejs')
 
 // pusher setup
+/*
 var pusher = new Pusher("50ed18dd967b455393ed")
 var askredditChannel = pusher.subscribe("askreddit")
 askredditChannel.bind("new-listing", function(listing) {
   console.log("NEW LISTING")
   console.log(listing)
+})
+*/
+
+// setup reddit api
+const reddit = new snoowrap({
+  userAgent: 'reddit-lens:v1 (by u/Soap153)',
+  clientId: process.env.REDDIT_CLIENT_ID,
+  clientSecret: process.env.REDDIT_CLIENT_SECRET,
+  refreshToken: process.env.REDDIT_REFRESH_TOKEN,
+})
+
+// setup mail transporter
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.GMAIL_USERNAME,
+      pass: process.env.GMAIL_PASSWORD,
+    }
 })
 
 // create an init function that binds the server to subreddits for existing tokens
@@ -68,6 +90,9 @@ app.get('/tokens', async (req, res) => {
 
 app.post('/create-filter', async (req, res) => {
   console.log(req.body)
+  // input sanitation
+  req.body.subreddit = req.body.subreddit.toLowerCase()
+
   // search for existing contact
   var query = await Contact.find({ content: req.body.contact.content, contentType: req.body.contact.contentType })
   var existingTokens = [];
@@ -139,15 +164,85 @@ app.post('/create-filter', async (req, res) => {
   })
 })
 
+const init = async (pusher) => {
+  //TODO figure out what to bind the new subscription to
+  // query for all relevant subreddits here.
+  const subreddits = await Token.distinct('subreddit')
+  console.log(subreddits)
+
+  subreddits.forEach(subreddit => pusher.subscribe(subreddit).bind("new-listing", handleListing))
+}
+
+const handleSubmission = async (submission) => {
+  // gather all tokens pertaining to the subreddit
+  const tokens = await Token.find({ subreddit: submission.subreddit.display_name.toLowerCase() })
+
+  tokens.forEach(token => {
+    // if isRegex, then perform a regex match with whichever fields specified
+    if (token.isRegex) {
+      var matched = false;
+      if (token.matchTitle
+        && listing.title.match(token.content))
+          matched = true;
+
+      if (token.matchBody && !matched) {
+        // TODO: use the following for less newlines in the selftext
+        //const body = await reddit.getSubmission(submission.id).selftext
+
+        if (helpers.exists(submission.selftext) && submission.selftext.match(token.content))
+          matched = true
+      }
+
+      if (token.matchFlair && !matched) {
+        if (helpers.exists(submission.link_flair_text) && submission.link_flair_text.match(token.content))
+          matched = true
+      }
+
+      if (matched) {
+        switch (token.contact.contentType) {
+          case 0:
+            // email
+            const mailOptions = {
+              from: process.env.GMAIL_USERNAME,
+              to: token.contact.content,
+              subject: 'New submissions in ' + submission.subreddit_name_prefixed,
+              text: 'Link to post ' + submission.url,
+            }
+
+            transporter.sendMail(mailOptions, function(err, info) {
+              if (err) console.log(err)
+              else console.log('Email sent: ' + info.response)
+            })
+            break
+          case 1:
+            // reddit pm
+            break;
+          case 2:
+            // sms
+            break;
+          default:
+            break;
+        }
+      }
+    }
+    else {
+    }
+  })
+
+}
+
 mongoose.connect('mongodb+srv://'
   + process.env.MONGO_DB_USER + ':'
   + process.env.MONGO_DB_PASS
   + '@cluster0-qbgzj.mongodb.net/reddit-lens?retryWrites=true&w=majority',
   { useNewUrlParser: true },
   () => {
-    app.listen(3000, () => {
+    app.listen(3000, async () => {
       console.log('listening on 3000')
-      feed.init()
+      const text = await reddit.getSubmission('emab78').selftext
+      console.log(text)
+      const submissions = new SubmissionStream(reddit, { subreddit: "tifu", limit: 1, pollTime: 2000 })
+      submissions.on("item", (sub) => console.log(sub.selftext))
     })
   }
 )
