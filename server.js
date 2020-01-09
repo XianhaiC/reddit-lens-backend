@@ -6,6 +6,7 @@ const bodyParser = require('body-parser')
 const mongoose = require('mongoose')
 const snoowrap = require('snoowrap')
 const nodemailer = require('nodemailer')
+const rockets = require('rockets')
 const app = express()
 
 const helpers = require('./helpers')
@@ -21,14 +22,18 @@ app.use(bodyParser.json())
 app.set('view engine', 'ejs')
 
 // pusher setup
+const pusher = new Pusher("50ed18dd967b455393ed")
 /*
-var pusher = new Pusher("50ed18dd967b455393ed")
-var askredditChannel = pusher.subscribe("askreddit")
-askredditChannel.bind("new-listing", function(listing) {
-  console.log("NEW LISTING")
-  console.log(listing)
+var askredditChannel = pusher.subscribe("tifu")
+askredditChannel.bind("new-listing", function(submission) {
+  console.log(submission.selftext)
+  handleSubmission(submission)
 })
 */
+
+// rockets setup
+const feed = new rockets()
+
 
 // setup reddit api
 const reddit = new snoowrap({
@@ -140,6 +145,7 @@ app.post('/create-filter', async (req, res) => {
         } catch (err) {
           res.json({ message: err.message })
           console.log(err.message)
+          return
         }
         found = true;
         break;
@@ -161,46 +167,96 @@ app.post('/create-filter', async (req, res) => {
         return
       }
     }
+    res.json({ok:true});
+  })
+
+  // now create the subreddit stream
+  const submissions = new SubmissionStream(reddit,
+    { subreddit: req.body.subreddit, limit: 5, pollTime: 1000 })
+  submissions.on("item", (sub) => {
+    console.log(sub.selftext)
+    handleSubmission(sub)
   })
 })
 
-const init = async (pusher) => {
+const init = async () => {
+  console.log("hey")
   //TODO figure out what to bind the new subscription to
   // query for all relevant subreddits here.
   const subreddits = await Token.distinct('subreddit')
   console.log(subreddits)
 
-  subreddits.forEach(subreddit => pusher.subscribe(subreddit).bind("new-listing", handleListing))
+  //subreddits.forEach(subreddit => pusher.subscribe(subreddit).bind("new-listing", handleListing))
+  /*
+  subreddits.forEach(subreddit => {
+    console.log("INIT SUB " + subreddit)
+    const submissions = new SubmissionStream(reddit,
+      { subreddit: subreddit, limit: 5, pollTime: 1000 })
+    submissions.on("item", (sub) => {
+      console.log(sub.selftext)
+      handleSubmission(sub)
+    })
+  })
+  */
+  const include = {
+    subreddit: subreddits,
+  }
+  feed.subscribe('posts', include)
+    /*
+  subreddits.forEach(subreddit => {
+    const subscription = pusher.subscribe(subreddit)
+    subscription.bind("new-listing", function(submission) {
+      console.log(submission.selftext)
+      handleSubmission(submission)
+    })
+  })
+    */
 }
 
 const handleSubmission = async (submission) => {
+  console.log(submission);
+  return;
   // gather all tokens pertaining to the subreddit
-  const tokens = await Token.find({ subreddit: submission.subreddit.display_name.toLowerCase() })
+  const tokens = await Token.find({ subreddit: submission.subreddit.toLowerCase() }).populate('contact')
 
   tokens.forEach(token => {
     // if isRegex, then perform a regex match with whichever fields specified
+    const contact = token.contact
+    console.log("CONT " + contact)
+    console.log("CHECKING FOR TOKEN " + contact.content)
     if (token.isRegex) {
+      console.log("REGEX " + token.content)
       var matched = false;
       if (token.matchTitle
-        && listing.title.match(token.content))
+        && submission.title.match(token.content)) {
           matched = true;
+          console.log("Match title")
+          console.log(submission.title)
+      }
 
       if (token.matchBody && !matched) {
         // TODO: use the following for less newlines in the selftext
         //const body = await reddit.getSubmission(submission.id).selftext
 
-        if (helpers.exists(submission.selftext) && submission.selftext.match(token.content))
+        if (helpers.exists(submission.selftext) && submission.selftext.match(token.content)) {
           matched = true
+          console.log("Match body")
+          console.log(submission.selftext)
+        }
       }
 
       if (token.matchFlair && !matched) {
-        if (helpers.exists(submission.link_flair_text) && submission.link_flair_text.match(token.content))
+        if (helpers.exists(submission.link_flair_text) && submission.link_flair_text.match(token.content)) {
           matched = true
+          console.log("Match flair")
+          console.log(submission.link_flair_text)
+        }
       }
 
       if (matched) {
         switch (token.contact.contentType) {
           case 0:
+            console.log("SENDING EMAIL TO " + contact.content)
             // email
             const mailOptions = {
               from: process.env.GMAIL_USERNAME,
@@ -231,6 +287,10 @@ const handleSubmission = async (submission) => {
 
 }
 
+// bind rockets callbacks
+feed.on('connect', function() { return })
+feed.on('post', handleSubmission)
+
 mongoose.connect('mongodb+srv://'
   + process.env.MONGO_DB_USER + ':'
   + process.env.MONGO_DB_PASS
@@ -239,10 +299,8 @@ mongoose.connect('mongodb+srv://'
   () => {
     app.listen(3000, async () => {
       console.log('listening on 3000')
-      const text = await reddit.getSubmission('emab78').selftext
-      console.log(text)
-      const submissions = new SubmissionStream(reddit, { subreddit: "tifu", limit: 1, pollTime: 2000 })
-      submissions.on("item", (sub) => console.log(sub.selftext))
+      console.log("PUSH " + pusher)
+      feed.connect()
     })
   }
 )
