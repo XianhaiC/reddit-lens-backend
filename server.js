@@ -31,9 +31,6 @@ askredditChannel.bind("new-listing", function(submission) {
 })
 */
 
-// rockets setup
-const feed = new rockets()
-
 
 // setup reddit api
 const reddit = new snoowrap({
@@ -177,6 +174,7 @@ app.post('/create-filter', async (req, res) => {
     console.log(sub.selftext)
     handleSubmission(sub)
   })
+  //pusher.subscribe(req.body.subreddit).bind("new-listing", handleSubmission)
 })
 
 const init = async () => {
@@ -186,23 +184,24 @@ const init = async () => {
   const subreddits = await Token.distinct('subreddit')
   console.log(subreddits)
 
-  //subreddits.forEach(subreddit => pusher.subscribe(subreddit).bind("new-listing", handleListing))
-  /*
+//  subreddits.forEach(subreddit => pusher.subscribe(subreddit).bind("new-listing", handleListing))
   subreddits.forEach(subreddit => {
     console.log("INIT SUB " + subreddit)
     const submissions = new SubmissionStream(reddit,
       { subreddit: subreddit, limit: 5, pollTime: 1000 })
     submissions.on("item", (sub) => {
-      console.log(sub.selftext)
+      console.log("RECEIVED NEW SUB: " + sub.id)
       handleSubmission(sub)
     })
   })
-  */
+  /*
   const include = {
     subreddit: subreddits,
   }
   feed.subscribe('posts', include)
-    /*
+  */
+
+  /*
   subreddits.forEach(subreddit => {
     const subscription = pusher.subscribe(subreddit)
     subscription.bind("new-listing", function(submission) {
@@ -210,14 +209,13 @@ const init = async () => {
       handleSubmission(submission)
     })
   })
-    */
+  */
 }
 
 const handleSubmission = async (submission) => {
   console.log(submission);
-  return;
   // gather all tokens pertaining to the subreddit
-  const tokens = await Token.find({ subreddit: submission.subreddit.toLowerCase() }).populate('contact')
+  const tokens = await Token.find({ subreddit: submission.subreddit.display_name.toLowerCase() }).populate('contact')
 
   tokens.forEach(token => {
     // if isRegex, then perform a regex match with whichever fields specified
@@ -257,6 +255,7 @@ const handleSubmission = async (submission) => {
         switch (token.contact.contentType) {
           case 0:
             console.log("SENDING EMAIL TO " + contact.content)
+            break;
             // email
             const mailOptions = {
               from: process.env.GMAIL_USERNAME,
@@ -287,9 +286,6 @@ const handleSubmission = async (submission) => {
 
 }
 
-// bind rockets callbacks
-feed.on('connect', function() { return })
-feed.on('post', handleSubmission)
 
 mongoose.connect('mongodb+srv://'
   + process.env.MONGO_DB_USER + ':'
@@ -300,7 +296,7 @@ mongoose.connect('mongodb+srv://'
     app.listen(3000, async () => {
       console.log('listening on 3000')
       console.log("PUSH " + pusher)
-      feed.connect()
+      init()
     })
   }
 )
